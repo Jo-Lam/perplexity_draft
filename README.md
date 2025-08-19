@@ -32,31 +32,27 @@ These drive **clerical review** and are easy to aggregate by **sub-group** and *
 For one left record with candidates \(i=1..K\):
 
 ### 2.1 Convert to odds vs no-match
-- From Splink **weights** \(M_i\) (base-2 log-odds):  
-  \(O_i = 2^{M_i}\)
-- From pairwise **probabilities** \(q_i\):  
-  \(O_i = \dfrac{q_i}{1 - q_i}\)
+- From Splink **weights** \(Mi\) (base-2 log-odds):  
+  <img width="227" height="72" alt="image" src="https://github.com/user-attachments/assets/147af06d-294c-4621-84a4-6c443348a66b" />
 
-> **Note on prior:** Splink’s *linkable prior* is already inside \(M_i\) / \(q_i\).  
+- From pairwise **probabilities** \(qi\):  
+  <img width="230" height="82" alt="image" src="https://github.com/user-attachments/assets/8d2c56f8-061c-4311-a0ef-e2fef3545e69" />
+
+> **Note on prior:** Splink’s *linkable prior* is already inside \(Mi\) / \(qi\).  
 > When forming the record-level distribution, set the no-match odds to **1** (neutral), unless you intentionally re-prior.
 
 ### 2.2 Normalise over {candidates + no-match}
-Let \(Z = 1 + \sum_i O_i\). Then
-\[
-p_{\text{null}} = \frac{1}{Z},\qquad p_i = \frac{O_i}{Z}.
-\]
+<img width="609" height="119" alt="image" src="https://github.com/user-attachments/assets/20d8cd23-affc-4a55-b011-e6b9581469bc" />
 
 ### 2.3 Record-level metrics
-- **Matchability:** \(1 - p_{\text{null}} = \frac{\sum_i O_i}{1+\sum_i O_i}\).
+- **Matchability: <img width="190" height="51" alt="image" src="https://github.com/user-attachments/assets/99e79966-7380-4b20-9676-7cbaca6bfdaf" />
 - **Conditional candidate probabilities (given it links):**  
-  \(\tilde p_i = \dfrac{p_i}{1 - p_{\text{null}}} = \dfrac{O_i}{\sum_j O_j}\).
+  <img width="274" height="64" alt="image" src="https://github.com/user-attachments/assets/e7049868-672e-4db1-9bf1-5f9b51ce6927" />
+
 - **Conditional entropy (bits) & perplexity:**  
-  \(H_{\text{cond}} = -\sum_i \tilde p_i \log_2 \tilde p_i\),  
-  \(\text{Perp}_{\text{cond}} = 2^{H_{\text{cond}}}\)  
+  <img width="274" height="73" alt="image" src="https://github.com/user-attachments/assets/26170d43-8afd-42f5-8fef-56f0f2eb98ff" />
   (≈ **effective number of plausible candidates**; continuous, so 1.03 means “almost unique”.)
 - (Optional) **Unconditional** entropy/perplexity (include `p_null`) for dataset QA.
-
-> **Numerical stability:** use the “max-trick” when exponentiating weights: let \(b=\max(0,M_1,\dots,M_K)\), use \(2^{M_i-b}\) and scale the null by \(2^{-b}\).
 
 ---
 
@@ -65,36 +61,24 @@ p_{\text{null}} = \frac{1}{Z},\qquad p_i = \frac{O_i}{Z}.
 Measure how “crowded” a record’s identifier **combination** is *before* the model weighs evidence:
 
 - Use the **same comparison levels** you trust for linkage (e.g., “first name exact or Jaro≥0.9”, “surname exact”, “DOB exact or ±1”, “postcode sector exact”).  
-- For each left record, count spine records that satisfy this **profile** ⇒ \(n_{\text{pre}}\).  
-- Report:  
-  \( \text{Perp}_{\text{pre}} = n_{\text{pre}}, \qquad H_{\text{pre}} = \log_2 n_{\text{pre}}.\)
-
-**Resolution Gain:** \(RG = H_{\text{pre}} - H_{\text{cond}}\) (bits)  
-**Resolution Factor:** \(RF = \text{Perp}_{\text{pre}} / \text{Perp}_{\text{cond}}\).
-
-Large \(RG\)/\(RF\) = the matcher resolved a crowded neighbourhood; small or negative = lingering ambiguity (or duplicates in the spine).
+- For each left record, count spine records that satisfy this **profile** ⇒ Npre
+- Report:  Perp_pre = Npre, Hpre = log2 Npre
+- Resolution Gain: RG = H_pre - Hcond (bits)
+- Resolution Factor: RF = Perp_pre / Perp_cond
+       potentially useful - Large RG/RF shows that our linker resolved a crowded neighbourhood. Small RG/RG shows that there are lingering ambiguity or duplication in the spine.
 
 ---
 
-## 4) Thresholding: before vs after threshold selection 
-
-- **Best practice FOR MODEL BIAS ANALYSIS:** compute metrics on the **unthresholded** predictions; trim only for display (e.g., top-k or 99% mass).  
-- **If production must threshold:** keep **pre-threshold aggregates** per record:  
-  \(S_{\text{all}}=\sum_i 2^{M_i}\), raw candidate count. Compute `p_null` using \(S_{\text{all}}\), and, if rivals are dropped, add an **“other” bucket** with mass \(S_{\text{drop}} = S_{\text{all}} - S_{\text{kept}}\) when forming \(\tilde p\).  
-- **Why:** thresholding **inflates `p_null`** and **deflates `perp_cond`** by hiding mass and rivals.
-
----
-
-## 5) Calibration & priors (short)
+## 4) Calibration & priors (short)
 
 - **Calibration matters:** if pairwise scores are over/under-confident, entropy/perplexity will be biased. 
 - **Priors:** keep the default \(O_0=1\) (Splink’s prior already applied). Override only if you intentionally re-prior for a specific dataset/source.
 
 ---
 
-## 6) Implementing
+## 5) Implementing
 
-### 6.1 Compute record-level metrics from `predict()`
+### 5.1 Compute record-level metrics from `predict()`
 
 ```python
 import numpy as np
@@ -224,7 +208,7 @@ def compute_perplexity_metrics_from_splink(
     return record_metrics, edges_enriched
 ```
 
-### 6.2 Pre-linkage ambiguity via your comparison levels (to be populated)
+### 5.2 Pre-linkage ambiguity via your comparison levels (to be populated)
 
 ```python
 # After predict() with gamma/level columns available
@@ -249,9 +233,9 @@ rm["RF_factor"] = rm["perp_pre"] / np.clip(rm["perp_cond"], 1e-12, None)
 
 ---
 
-## 7) How to interpret
+## 6) How to interpret
 
-### 7.1 Single patient (record)
+### 6.1 Single patient (record)
 - **Likely unlinkable:** `p_null ≥ 0.8` (or `zero_candidate=True`).  
 - **Uncertain:** `matchability ∈ [0.2, 0.8]` → review; use `perp_cond` to see if one candidate vs many.  
 - **Likely link:** `matchability ≥ 0.8`.  
@@ -259,14 +243,14 @@ rm["RF_factor"] = rm["perp_pre"] / np.clip(rm["perp_cond"], 1e-12, None)
   - `perp_cond ≥ 3` → rival cluster or spine duplicates → review/dedupe.  
 - **Context with pre-ambiguity:** high `Perp_pre` but low `perp_cond` → well resolved; high/high → genuine homonyms.
 
-### 7.2 Sub-population (e.g., ethnicity, age, region)
+### 6.2 Sub-population (e.g., ethnicity, age, region)
 Report per group:
 - **Unlinkables-like rate:** share with `p_null > τ` (e.g., 0.8/0.9).  
 - **Ambiguity burden:** median/p90 `perp_cond` among `matchability ≥ 0.5`.  
 - **Intrinsic crowding:** median `H_pre`.  
 - **Resolution gain:** median `RG_bits`.  
 
-### 7.3 Population/dataset
+### 6.3 Population/dataset
 Track over time:
 - Unlinkables share, zero-candidate rate  
 - Median matchability  
@@ -275,7 +259,7 @@ Track over time:
 
 ---
 
-## 8) Visuals (quick starters)
+## 7) Visuals (quick starters)
 
 ```python
 import matplotlib.pyplot as plt
@@ -290,7 +274,11 @@ def plot_pnull_hist(record_metrics, bins=30, thresholds=(0.2, 0.8)):
     ax.set_ylabel("count")
     ax.set_title("Distribution of p_null")
     plt.show()
+```
 
+<img width="571" height="455" alt="cf403920-79ac-4b35-98b6-837936f12471" src="https://github.com/user-attachments/assets/a48a9bc0-4dbb-4630-9302-8c9fc6b0410f" />
+
+```python
 def plot_perp_cond_hist(record_metrics, bins=30, matchability_min=0.5):
     m = record_metrics["matchability"].to_numpy()
     perp = record_metrics["perp_cond"].to_numpy()
@@ -301,7 +289,12 @@ def plot_perp_cond_hist(record_metrics, bins=30, matchability_min=0.5):
     ax.set_ylabel("count")
     ax.set_title(f"Perplexity (conditional) for matchable records (matchability ≥ {matchability_min})")
     plt.show()
+```
+<img width="600" height="455" alt="8c9e1160-cf3d-4f65-8b91-e48679dc30f0" src="https://github.com/user-attachments/assets/6b9dc18d-eaae-40fa-ad7d-2b8fc8207939" />
 
+
+
+```python
 def plot_matchability_vs_perp(record_metrics, m_band=(0.2, 0.8), perp_thresh=3):
     m = record_metrics["matchability"].to_numpy()
     perp = record_metrics["perp_cond"].to_numpy()
@@ -315,16 +308,35 @@ def plot_matchability_vs_perp(record_metrics, m_band=(0.2, 0.8), perp_thresh=3):
     ax.set_title("Matchability vs Conditional Perplexity (triage bands)")
     plt.show()
 ```
----
 
-## 9) Glossary
-- **`match_weight`**: Splink’s base-2 log-odds for a pair (includes prior).  
-- **Odds vs no-match**: \(O_i = 2^{M_i}\) or \(q_i/(1-q_i)\).  
-- **`p_null`**: probability of no match for the record.  
-- **`matchability`**: \(1-p_{\text{null}}\).  
-- **`p_i` / `p_cond`**: per-candidate probability mass (unconditional / conditional on linking).  
-- **`H_cond` / `perp_cond`**: entropy & perplexity over `p_cond` (ambiguity among candidates).  
-- **`H_pre` / `Perp_pre`**: pre-linkage combined cardinality using your comparison levels.  
-- **`RG_bits` / `RF_factor`**: resolution gain/factor from pre to post.
+<img width="554" height="455" alt="2afa4b36-9a59-4b09-9f5d-e231f3d8564b" src="https://github.com/user-attachments/assets/0d500f58-449d-4c46-82a0-263c31addf3a" />
 
----
+### What the axes & lines mean
+x (matchability = 1 − p_null): how likely the record links to someone.
+y (perp_cond): “effective # of plausible candidates given it links.”
+1 ≈ one clear winner; 2 ≈ two near-equals; 3+ = genuine ambiguity.
+
+Vertical lines (0.2, 0.8): rough bands → left = likely unlinkable, middle = uncertain, right = likely link.
+Horizontal line (y=3): flag if there are ~3+ viable candidates.
+
+(Note this is done without setting a threshold for linkage model analysis.)
+
+### How to interpret the clusters  - to drive clerical review (use thresholded version)
+- Pile at x≈0, y≈1
+Zero-candidate or only vanishingly weak candidates. These are the unlinkables (or blocking missed the true match). Not worth clerical time—fix blocking/backoffs & data quality.
+
+- Left side (x≈0) but y>1 (some up to ~9)
+Many weak lookalikes, none convincing → ambiguous and unlikely to link. Treat as unlinkable for this run; investigate blocking/recall for common-name blocks.
+
+- Middle band (0.2 ≤ x ≤ 0.8)
+Uncertain existence of a link.
+Low y (~1–1.5): one lukewarm candidate vs no-match → good for review (often data-quality issues or harsh prior), but not priority.
+High y (≥3): several contenders and overall uncertainty → strong review candidates.
+
+- Right edge (x≈1), y≈1–2
+Confident links. Most have one dominant candidate (y≈1); some have two close ones (y≈2). Generally auto-accept. But depends on use case, may warrant reviews 
+
+- Right edge (x≈1), y≥3 (if any)
+Likely duplicates in the spine or multiple near-identical candidates. Send to review for duplication or add tie-breaker features.
+
+
