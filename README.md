@@ -1,6 +1,6 @@
-# README — Record-level Perplexity, Matchability & Pre-linkage Ambiguity for Splink
+# Record-level Perplexity, Matchability & Pre-linkage Ambiguity for Splink
 
-## TL;DR
+## Overview
 - **Goal:** quantify *how certain* a linkage decision is **per record**, and summarise uncertainty for **sub-populations** and the **whole dataset**.  
 
 - **Outputs per record:**  
